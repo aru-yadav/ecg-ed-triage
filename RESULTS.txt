@@ -1,0 +1,11 @@
+﻿PTB-XL binary MI detection - fold-10 held-out test (patient-grouped)
+Split: train folds 1-8 / val fold 9 / test fold 10
+Seeds: 42, 142, 242
+
+VAL  (fold 9)  AUROC = 0.9247  (n=2183, MI=537)
+TEST (fold 10) AUROC = 0.9249  (n=2198, MI=550)
+
+Operating points (thresholds tuned on fold 9, measured on fold 10):
+  max_safety   thr 0.1867  ->  sens 98.73%  spec 51.70%
+  high_safety  thr 0.2350  ->  sens 96.91%  spec 62.14%
+  balanced     thr 0.2975  ->  sens 93.82%  spec 71.54%

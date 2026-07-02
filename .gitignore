@@ -1,0 +1,35 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ipynb_checkpoints/
+
+# --- virtual envs ---
+.venv/
+venv/
+env/
+
+# --- data (large; download PTB-XL from PhysioNet, see README) ---
+data/
+!data/.gitkeep
+
+# --- generated artifacts ---
+reports/
+*.pdf
+*.log
+api_audit.log
+
+# --- staging dir for retired files (not part of the public repo) ---
+raw_old/
+
+# --- editors / OS / tooling ---
+.claude/
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+scratch_*.out
+
+# NOTE: model weights in models/*.pt ARE committed (each ~35 MB, under GitHub's
+# 100 MB limit) so the repo reproduces out of the box. Do not add them here.

@@ -1,0 +1,55 @@
+{
+  "model_info": {
+    "num_models": 3,
+    "model_files": [
+      "models/ensemble_model_1.pt",
+      "models/ensemble_model_2.pt",
+      "models/ensemble_model_3.pt"
+    ],
+    "architecture": "ImprovedECGModel (ResNet-based 1D CNN)",
+    "input_shape": [12, 1000],
+    "ensemble_method": "mean of per-model softmax P(MI)",
+    "seeds": [42, 142, 242],
+    "version": "2.0.0"
+  },
+  "evaluation": {
+    "dataset": "PTB-XL",
+    "task": "binary MI detection",
+    "split": "PTB-XL strat_fold (patient-grouped): train folds 1-8, val fold 9, test fold 10",
+    "thresholds_tuned_on": "fold 9 (validation)",
+    "metrics_measured_on": "fold 10 (held-out test)",
+    "val_auroc": 0.9247,
+    "test_auroc": 0.9249,
+    "n_val": 2183,
+    "mi_val": 537,
+    "n_test": 2198,
+    "mi_test": 550
+  },
+  "modes": {
+    "max_safety": {
+      "name": "Maximum Safety Mode",
+      "threshold": 0.1867,
+      "sensitivity": 98.73,
+      "specificity": 51.70,
+      "use_case": "Emergency Department - Unstable/High-Risk Patients",
+      "description": "Prioritizes never missing an MI; accepts a high false-alarm rate."
+    },
+    "high_safety": {
+      "name": "High Safety Mode",
+      "threshold": 0.2350,
+      "sensitivity": 96.91,
+      "specificity": 62.14,
+      "use_case": "Emergency Department - Standard Triage",
+      "description": "Balanced ED triage; catches ~97% of MIs with manageable false alarms."
+    },
+    "balanced": {
+      "name": "Balanced Mode",
+      "threshold": 0.2975,
+      "sensitivity": 93.82,
+      "specificity": 71.54,
+      "use_case": "Outpatient Clinic - Screening",
+      "description": "Efficient screening with fewer false alarms."
+    }
+  },
+  "disclaimer": "Research prototype only. Not a medical device; not FDA/CE cleared; not for clinical use."
+}

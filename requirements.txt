@@ -1,0 +1,21 @@
+# Pinned to the environment that produced RESULTS.txt (Python 3.14, CPU torch).
+# For GPU, install the matching CUDA torch build from https://pytorch.org.
+
+# --- core / training pipeline (src/ecg_triage) ---
+numpy==2.4.0
+pandas==2.3.3
+scipy==1.16.3
+scikit-learn==1.8.0
+torch==2.9.1
+tqdm==4.67.1
+wfdb==4.3.0
+matplotlib==3.10.8
+
+# --- inference API (api/) ---
+fastapi==0.127.0
+uvicorn==0.40.0
+pydantic==2.12.5
+reportlab==4.4.10        # PDF report generation (api/report_generator.py)
+pillow==12.0.0
+
+# Notebooks (notebooks/) additionally require Jupyter: pip install jupyter
