@@ -43,22 +43,84 @@ Thresholds tuned on fold 9, measured on fold 10:
 | `high_safety` | 0.2350 | 96.91% | 62.14% | ED standard triage (recommended default) |
 | `balanced`    | 0.2975 | 93.82% | 71.54% | Outpatient screening |
 
-## Reproduce in one command
+## Reproduce the fold-10 results (0.9249)
 
-1. Download PTB-XL v1.0.3 from PhysioNet (see **Data & attribution** below) into
-   `data/raw/ptb-xl-a-large-publicly-available-electrocardiography-dataset-1.0.3/`
-   (or point the `PTBXL_DIR` env var at your copy).
-2. Install dependencies and run the evaluation:
+The 3 ensemble weights are committed to `models/`, so reproducing the canonical
+metrics only requires adding the PTB-XL dataset (~1.7 GB, not redistributed here;
+open access, no login). Run this top to bottom from a fresh clone:
 
 ```bash
+# 1. clone
+git clone https://github.com/aru-yadav/ecg-ed-triage
+cd ecg-ed-triage
+
+# 2. download PTB-XL v1.0.3 (~1.7GB) — into the repo's data/raw/
+mkdir -p data/raw
+wget -O data/raw/ptbxl.zip https://physionet.org/content/ptb-xl/get-zip/1.0.3/
+
+# 3. unzip (extracts to the versioned folder data.py expects)
+cd data/raw && unzip -q ptbxl.zip && rm ptbxl.zip && cd ../..
+# after this, the data is at:
+#   data/raw/ptb-xl-a-large-publicly-available-electrocardiography-dataset-1.0.3/
+# containing ptbxl_database.csv and records100/  (no extra nesting)
+
+# 4. install + reproduce
 pip install -r requirements.txt
 PYTHONPATH=src python -m ecg_triage.evaluate
 ```
 
-This loads `models/ensemble_model_{1,2,3}.pt`, prints VAL/TEST AUROC and the
-three operating points, and reproduces [`RESULTS.txt`](RESULTS.txt). The first
-run preprocesses PTB-XL and caches it to `data/processed/`; later runs reuse the
-cache.
+The zip's single top-level folder is named
+`ptb-xl-a-large-publicly-available-electrocardiography-dataset-1.0.3`, which is
+exactly the path `src/ecg_triage/data.py` looks for by default — so step 3 lands
+the data in the right place with no move needed.
+
+### Windows
+
+`wget` and `unzip` may not be installed, but Windows 10+ ships `curl.exe` and
+`tar` (which extracts zips). In PowerShell:
+
+```powershell
+git clone https://github.com/aru-yadav/ecg-ed-triage
+cd ecg-ed-triage
+New-Item -ItemType Directory -Force data\raw | Out-Null
+curl.exe -L -o data\raw\ptbxl.zip https://physionet.org/content/ptb-xl/get-zip/1.0.3/
+tar -xf data\raw\ptbxl.zip -C data\raw
+Remove-Item data\raw\ptbxl.zip
+pip install -r requirements.txt
+$env:PYTHONPATH = "src"; python -m ecg_triage.evaluate
+```
+
+### What correct output looks like
+
+The first run preprocesses PTB-XL and caches it to
+`data/processed/foldcv_cache.npz` (a few minutes); later runs reuse the cache.
+You should see:
+
+```
+VAL  (fold 9)  AUROC = 0.9247   n=2183 MI=537
+TEST (fold 10) AUROC = 0.9249   n=2198 MI=550
+```
+
+followed by the three operating points:
+
+```
+max_safety    thr 0.1867  ->  TEST sens 98.73%  spec 51.70%
+high_safety   thr 0.2350  ->  TEST sens 96.91%  spec 62.14%
+balanced      thr 0.2975  ->  TEST sens 93.82%  spec 71.54%
+```
+
+Seeing **TEST AUROC = 0.9249** means it worked — this matches
+[`RESULTS.txt`](RESULTS.txt).
+
+### Data anywhere (alternative to the default path)
+
+Skip step 3's location and point `PTBXL_DIR` at the extracted
+`ptb-xl-...-1.0.3` folder wherever it lives:
+
+```bash
+PTBXL_DIR=/path/to/ptb-xl-a-large-publicly-available-electrocardiography-dataset-1.0.3 \
+  PYTHONPATH=src python -m ecg_triage.evaluate
+```
 
 ## Repository layout
 
