@@ -4,6 +4,12 @@ Split is by the dataset's ``strat_fold`` column (PTB-XL folds are already
 patient-grouped, so no patient appears in more than one fold):
     train = folds 1-8,  val = fold 9,  test = fold 10.
 We NEVER use train_test_split and NEVER mix folds.
+
+Paths are resolved relative to the repo root and can be overridden with env vars
+(or the --data / --models CLI flags on evaluate.py / train.py):
+    PTBXL_DIR     dataset dir   (default: data/raw/<ptb-xl-...-1.0.3>)
+    FOLDCV_CACHE  cache file    (default: data/processed/foldcv_cache.npz)
+    MODELS_DIR    weights dir   (default: models/)
 """
 import ast
 import os
@@ -16,17 +22,30 @@ from tqdm import tqdm
 
 from .preprocess import preprocess_ecg_advanced
 
-# Resolve the dataset dir relative to the repo root (this file: src/ecg_triage/data.py).
-# Override either path with env vars PTBXL_DIR / FOLDCV_CACHE for GPU/Colab runs.
+# Repo root (this file: src/ecg_triage/data.py).
 REPO_ROOT = Path(__file__).resolve().parents[2]
-DATA_DIR = Path(os.environ.get(
-    "PTBXL_DIR",
-    REPO_ROOT / "data" / "raw" / "ptb-xl-a-large-publicly-available-electrocardiography-dataset-1.0.3",
-))
-CACHE_PATH = Path(os.environ.get(
-    "FOLDCV_CACHE",
-    REPO_ROOT / "data" / "processed" / "foldcv_cache.npz",
-))
+
+DATASET_DIRNAME = "ptb-xl-a-large-publicly-available-electrocardiography-dataset-1.0.3"
+DEFAULT_DATASET_DIR = REPO_ROOT / "data" / "raw" / DATASET_DIRNAME
+DEFAULT_CACHE_PATH = REPO_ROOT / "data" / "processed" / "foldcv_cache.npz"
+DEFAULT_MODELS_DIR = REPO_ROOT / "models"
+PTBXL_URL = "https://physionet.org/content/ptb-xl/1.0.3/"
+
+
+def dataset_dir() -> Path:
+    """PTB-XL dataset directory. Override with env var ``PTBXL_DIR``."""
+    return Path(os.environ.get("PTBXL_DIR", DEFAULT_DATASET_DIR))
+
+
+def cache_path() -> Path:
+    """Preprocessed cache file. Override with env var ``FOLDCV_CACHE``."""
+    return Path(os.environ.get("FOLDCV_CACHE", DEFAULT_CACHE_PATH))
+
+
+def models_dir() -> Path:
+    """Directory holding ensemble_model_{1,2,3}.pt. Override with ``MODELS_DIR``."""
+    return Path(os.environ.get("MODELS_DIR", DEFAULT_MODELS_DIR))
+
 
 TRAIN_FOLDS = [1, 2, 3, 4, 5, 6, 7, 8]
 VAL_FOLD = 9
@@ -47,20 +66,41 @@ def has_mi(scp_codes_str):
     return 0
 
 
+def require_dataset() -> Path:
+    """Return the dataset dir, or raise a friendly error if PTB-XL is missing."""
+    d = dataset_dir()
+    csv = d / "ptbxl_database.csv"
+    if not csv.exists():
+        raise RuntimeError(
+            "PTB-XL dataset not found.\n"
+            f"  expected file : {csv}\n"
+            f"  the directory must directly contain ptbxl_database.csv and records100/\n"
+            f"  download PTB-XL v1.0.3 (open access, ~1.7 GB) from:\n"
+            f"      {PTBXL_URL}\n"
+            f"  then either place the extracted '{DATASET_DIRNAME}'\n"
+            f"  folder under data/raw/, or set PTBXL_DIR (or pass --data) to point at it."
+        )
+    return d
+
+
 def load_metadata():
-    df = pd.read_csv(DATA_DIR / "ptbxl_database.csv")
+    d = require_dataset()
+    df = pd.read_csv(d / "ptbxl_database.csv")
     df['is_mi'] = df['scp_codes'].apply(has_mi)
     assert 'strat_fold' in df.columns, "strat_fold column missing from ptbxl_database.csv"
     return df
 
 
 def build_cache(force=False):
-    """Load + preprocess every 100 Hz record once, cache to data/processed/foldcv_cache.npz.
+    """Load + preprocess every 100 Hz record once, cache to the FOLDCV_CACHE path.
 
     Cached arrays are stored in df row order; fold/label arrays align by position.
+    If the cache already exists the dataset itself is not required.
     """
-    if CACHE_PATH.exists() and not force:
+    cp = cache_path()
+    if cp.exists() and not force:
         return
+    d = require_dataset()
     df = load_metadata()
     X = np.zeros((len(df), 12, 1000), dtype=np.float32)
     y = df['is_mi'].to_numpy().astype(np.int64)
@@ -68,19 +108,19 @@ def build_cache(force=False):
     ok = np.ones(len(df), dtype=bool)
     for idx in tqdm(range(len(df)), desc="Preprocessing PTB-XL (100Hz)"):
         try:
-            rec = wfdb.rdsamp(str(DATA_DIR / df.loc[idx, 'filename_lr']))
+            rec = wfdb.rdsamp(str(d / df.loc[idx, 'filename_lr']))
             X[idx] = preprocess_ecg_advanced(rec[0].T, orig_fs=100)
         except Exception:
             ok[idx] = False
-    CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    np.savez(CACHE_PATH, X=X[ok], y=y[ok], fold=fold[ok])
-    print(f"Cached {ok.sum()} records (failed {int((~ok).sum())}) -> {CACHE_PATH}")
+    cp.parent.mkdir(parents=True, exist_ok=True)
+    np.savez(cp, X=X[ok], y=y[ok], fold=fold[ok])
+    print(f"Cached {ok.sum()} records (failed {int((~ok).sum())}) -> {cp}")
 
 
 def get_splits():
     """Return dict of (X, y) per split, sliced strictly by strat_fold."""
     build_cache()
-    d = np.load(CACHE_PATH)
+    d = np.load(cache_path())
     X, y, fold = d['X'], d['y'], d['fold']
 
     def sel(folds):

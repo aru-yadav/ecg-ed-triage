@@ -64,8 +64,10 @@ cd data/raw && unzip -q ptbxl.zip && rm ptbxl.zip && cd ../..
 #   data/raw/ptb-xl-a-large-publicly-available-electrocardiography-dataset-1.0.3/
 # containing ptbxl_database.csv and records100/  (no extra nesting)
 
-# 4. install + reproduce
+# 4. install (a virtualenv is recommended) + reproduce
+python -m venv .venv && . .venv/bin/activate     # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
+PYTHONPATH=src python -m ecg_triage.check         # optional: verify readiness
 PYTHONPATH=src python -m ecg_triage.evaluate
 ```
 
@@ -86,7 +88,9 @@ New-Item -ItemType Directory -Force data\raw | Out-Null
 curl.exe -L -o data\raw\ptbxl.zip https://physionet.org/content/ptb-xl/get-zip/1.0.3/
 tar -xf data\raw\ptbxl.zip -C data\raw
 Remove-Item data\raw\ptbxl.zip
+python -m venv .venv; .venv\Scripts\Activate.ps1
 pip install -r requirements.txt
+$env:PYTHONPATH = "src"; python -m ecg_triage.check      # optional: verify readiness
 $env:PYTHONPATH = "src"; python -m ecg_triage.evaluate
 ```
 
@@ -129,8 +133,9 @@ src/ecg_triage/     Seeded, patient-grouped fold pipeline (canonical training co
   data.py           PTB-XL loading, MI labels, strat_fold split (train 1-8 / val 9 / test 10)
   preprocess.py     Bandpass 0.5-40 Hz -> per-lead z-score -> 1000 samples
   model.py          ImprovedECGModel (ResNet-based 1D CNN)
-  train.py          Train the 3-seed ensemble
-  evaluate.py       Reproduce RESULTS.txt (AUROC + operating points)
+  train.py          Train the 3-seed ensemble        (--data / --models)
+  evaluate.py       Reproduce RESULTS.txt             (--data / --models)
+  check.py          Environment/data readiness check (python -m ecg_triage.check)
 api/                FastAPI inference service (prediction + Grad-CAM XAI + PDF reports)
 models/             Canonical fold-10 weights + ensemble_config.json (operating points)
 notebooks/          Exploratory notebooks (outputs stripped; see note below)

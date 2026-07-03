@@ -1,0 +1,42 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - name: Install pinned dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Import smoke (package + all modules)
+        run: PYTHONPATH=src python -c "import ecg_triage; from ecg_triage import data, preprocess, model, evaluate, train, check; print('imports OK')"
+
+      - name: Readiness check (models present; dataset not shipped, so may report NOT READY)
+        run: PYTHONPATH=src python -m ecg_triage.check || true
+
+      - name: API smoke test (loads committed weights + one /predict)
+        run: |
+          PYTHONPATH=. python - <<'PY'
+          from fastapi.testclient import TestClient
+          from api.main import app
+          with TestClient(app) as c:
+              r = c.get("/")
+              assert r.status_code == 200, r.status_code
+              assert abs(r.json()["auroc"] - 0.9249) < 1e-9, r.json()
+              ecg = [[0.0] * 1000 for _ in range(12)]
+              p = c.post("/predict", json={"ecg_data": ecg, "mode": "high_safety"})
+              assert p.status_code == 200, (p.status_code, p.text)
+              assert p.json()["model_version"] == "2.0.0", p.json()
+          print("API smoke OK")
+          PY

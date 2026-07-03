@@ -1,8 +1,8 @@
-"""ImprovedECGModel — identical architecture to notebooks/api/api_v2.py:84-130.
+"""ImprovedECGModel — the ResNet-based 1D CNN used across this repo.
 
-Kept byte-for-byte structurally equivalent so weights are interchangeable in
-shape with the existing ensemble (we do NOT load existing weights here; this
-module is only for the new fold-CV training).
+This is the architecture for the 3 ensemble weights in models/: train.py writes
+them and evaluate.py / the API load them into this class. The same definition is
+mirrored in api/ml/architecture.py so the API can load the weights standalone.
 """
 import torch.nn as nn
 import torch.nn.functional as F

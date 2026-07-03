@@ -2,7 +2,7 @@
 # For GPU, install the matching CUDA torch build from https://pytorch.org.
 
 # --- core / training pipeline (src/ecg_triage) ---
-numpy==2.4.0
+numpy==2.4.1          # 2.4.0 was yanked; 2.4.1 is the fix (torch 2.9 supports numpy 2.x)
 pandas==2.3.3
 scipy==1.16.3
 scikit-learn==1.8.0

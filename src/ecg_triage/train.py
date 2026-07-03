@@ -7,8 +7,12 @@ Config ported VERBATIM from 02_production_model.ipynb (cells 15, 16, 18):
   - 30 epochs, early-stop patience 12, save BEST-by-val-accuracy
   - per-model seed = 42 + model_idx*100  (exactly as the notebook)
 
-Weights saved to models_foldcv/ so existing models/ weights are untouched.
+By default the 3 best-by-val-accuracy checkpoints are written to models/ (the
+repo's canonical weights dir), so re-running this OVERWRITES the shipped weights.
+To train without touching them, pass --models <dir> or set MODELS_DIR (e.g. a
+Google Drive path) to write elsewhere.
 """
+import argparse
 import os
 import random
 import time
@@ -20,13 +24,11 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader, TensorDataset
 
-from .data import get_splits, REPO_ROOT
+from . import data as D
+from .data import get_splits
 from .model import ImprovedECGModel
 
 GLOBAL_SEED = 42
-# Override with env var MODELS_FOLDCV_DIR (e.g. a Google Drive path) so the 3
-# best-checkpoints are written straight to durable storage during training.
-OUT_DIR = Path(os.environ.get("MODELS_FOLDCV_DIR", REPO_ROOT / "models_foldcv"))
 
 
 # ---- augmentation (verbatim, cells 2 & 15) ----
@@ -100,7 +102,19 @@ def validate(model, loader, criterion, device):
     return running_loss / total, 100. * correct / total
 
 
-def main():
+def main(argv=None):
+    ap = argparse.ArgumentParser(
+        description="Train the 3-seed ensemble on PTB-XL folds 1-8 (val fold 9).")
+    ap.add_argument("--data", metavar="DIR",
+                    help="PTB-XL dataset dir (overrides PTBXL_DIR / default data/raw/...).")
+    ap.add_argument("--models", metavar="DIR",
+                    help="output dir for ensemble_model_{1,2,3}.pt "
+                         "(overrides MODELS_DIR / default models/; WARNING: overwrites).")
+    args = ap.parse_args(argv)
+    if args.data:
+        os.environ["PTBXL_DIR"] = args.data
+    out_dir = Path(args.models) if args.models else D.models_dir()
+
     # ---- seeds: fixed AND printed ----
     random.seed(GLOBAL_SEED)
     np.random.seed(GLOBAL_SEED)
@@ -131,7 +145,8 @@ def main():
         batch_size=32, shuffle=False,
     )
 
-    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    print(f"[out] writing weights to {out_dir}")
 
     num_epochs = 30
     early_stop_patience = 12
@@ -155,7 +170,7 @@ def main():
 
         best_val_acc = 0.0
         patience_counter = 0
-        save_path = OUT_DIR / f"ensemble_model_{model_idx+1}.pt"
+        save_path = out_dir / f"ensemble_model_{model_idx+1}.pt"
 
         for epoch in range(1, num_epochs + 1):
             t0 = time.time()

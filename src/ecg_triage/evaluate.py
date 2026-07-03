@@ -1,4 +1,4 @@
-"""Evaluate the fold-CV ensemble.
+"""Evaluate the fold-10 ensemble that ships in models/.
 
 - ensemble probability = mean over 3 models of softmax(logits)[:, 1]
 - AUROC on val (fold 9) and test (fold 10)
@@ -6,7 +6,14 @@
   named modes: max_safety>=0.98, high_safety>=0.96, balanced>=0.93), i.e. the
   highest threshold whose val-sensitivity still meets the target.
 - sensitivity/specificity then reported on fold 10 at those frozen thresholds.
+
+Weights load from models/ by default (the 3 files committed to this repo).
+Override the weights dir with --models or the MODELS_DIR env var, and the dataset
+dir with --data or PTBXL_DIR.
+
+    PYTHONPATH=src python -m ecg_triage.evaluate
 """
+import argparse
 import os
 from pathlib import Path
 
@@ -15,19 +22,34 @@ import torch
 import torch.nn.functional as F
 from sklearn.metrics import roc_auc_score, roc_curve, confusion_matrix
 
-from .data import get_splits, REPO_ROOT
+from . import data as D
+from .data import get_splits
 from .model import ImprovedECGModel
 
-# Same override as train.py so evaluate reads the weights wherever they were saved.
-MODEL_DIR = Path(os.environ.get("MODELS_FOLDCV_DIR", REPO_ROOT / "models_foldcv"))
 TARGETS = [("max_safety", 0.98), ("high_safety", 0.96), ("balanced", 0.93)]
+MODEL_FILES = [f"ensemble_model_{i}.pt" for i in (1, 2, 3)]
 
 
-def load_models(device):
+def require_models(model_dir: Path):
+    """Raise a friendly error listing exactly which weight files are missing."""
+    present = [f for f in MODEL_FILES if (model_dir / f).exists()]
+    missing = [f for f in MODEL_FILES if f not in present]
+    if missing:
+        raise RuntimeError(
+            "Ensemble weights not found.\n"
+            f"  looked in : {model_dir}\n"
+            f"  missing   : {', '.join(missing)}\n"
+            f"  present   : {', '.join(present) if present else '(none)'}\n"
+            "  This repo ships all 3 files in models/. If you moved them, pass\n"
+            "  --models <dir> or set MODELS_DIR to point at the folder."
+        )
+
+
+def load_models(model_dir, device):
     models = []
-    for i in range(1, 4):
+    for f in MODEL_FILES:
         m = ImprovedECGModel(num_classes=2)
-        m.load_state_dict(torch.load(MODEL_DIR / f"ensemble_model_{i}.pt", map_location=device))
+        m.load_state_dict(torch.load(model_dir / f, map_location=device))
         m.eval().to(device)
         models.append(m)
     return models
@@ -62,12 +84,55 @@ def sens_spec(y, p, threshold):
     return sens * 100, spec * 100
 
 
-def main():
+def startup_checks(model_dir: Path, device):
+    """Validate weights/dataset/cache up front and print an OK summary."""
+    print("=" * 64)
+    print("ecg_triage.evaluate - startup checks")
+    print("-" * 64)
+
+    require_models(model_dir)
+    print(f"  [OK] Models   : {model_dir}  ({len(MODEL_FILES)} weight files)")
+
+    cfg = model_dir / "ensemble_config.json"
+    print(f"  [{'OK' if cfg.exists() else '--'}] Config   : "
+          f"{cfg if cfg.exists() else '(ensemble_config.json not found - not required)'}")
+
+    cp = D.cache_path()
+    if cp.exists():
+        print(f"  [OK] Cache    : {cp}")
+        print(f"  [--] Dataset  : not needed (using prebuilt cache)")
+    else:
+        ds = D.require_dataset()
+        print(f"  [OK] Dataset  : {ds}")
+        print(f"  [..] Cache    : will be built at {cp}")
+
+    print(f"  [OK] Device   : {device}")
+    print("=" * 64, flush=True)
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(
+        description="Reproduce the fold-10 (patient-grouped) MI-detection metrics "
+                    "from the 3-model ensemble in models/.")
+    ap.add_argument("--data", metavar="DIR",
+                    help="PTB-XL dataset dir (overrides PTBXL_DIR / default data/raw/...). "
+                         "Ignored if the preprocessed cache already exists.")
+    ap.add_argument("--models", metavar="DIR",
+                    help="dir containing ensemble_model_{1,2,3}.pt "
+                         "(overrides MODELS_DIR / default models/).")
+    args = ap.parse_args(argv)
+
+    if args.data:
+        os.environ["PTBXL_DIR"] = args.data
+    model_dir = Path(args.models) if args.models else D.models_dir()
+
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    startup_checks(model_dir, device)
+
     splits = get_splits()
     Xva, yva = splits["val"]
     Xte, yte = splits["test"]
-    models = load_models(device)
+    models = load_models(model_dir, device)
 
     p_val = ensemble_probs(models, Xva, device)
     p_test = ensemble_probs(models, Xte, device)
