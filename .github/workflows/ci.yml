@@ -18,6 +18,10 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+          # httpx is a test-only dep for starlette/fastapi TestClient (used by
+          # the API smoke step below); it is not needed to run the service under
+          # uvicorn, so it is intentionally kept out of requirements.txt.
+          pip install "httpx==0.28.1"
 
       - name: Import smoke (package + all modules)
         run: PYTHONPATH=src python -c "import ecg_triage; from ecg_triage import data, preprocess, model, evaluate, train, check; print('imports OK')"
