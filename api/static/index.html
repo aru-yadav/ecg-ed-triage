@@ -1,0 +1,291 @@
+<!--
+  ECG MI-Triage — Web UI (single self-contained file, no framework, no CDN, no build step).
+  Every displayed value comes from the LIVE API response (/predict).
+  Nothing about the result is hardcoded.
+
+  Sample data: demo_MI.json / demo_NORMAL.json are single 12-lead records DERIVED
+  FROM PTB-XL (Wagner et al., PhysioNet), which is released under Creative Commons
+  Attribution 4.0 (CC-BY 4.0). They are model INPUTS only — never results.
+-->
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ECG MI-Triage</title>
+<style>
+  :root {
+    --bg: #0f1420; --panel: #171e2e; --panel2: #1e2740; --line: #2b3650;
+    --text: #e6ebf5; --muted: #93a0bd; --accent: #4f8cff; --accent2: #7aa2ff;
+    --ok: #2fbf71; --warn: #f5a623; --danger: #ff5d6c; --chip: #223052;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.5 -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+  }
+  .wrap { max-width: 1040px; margin: 0 auto; padding: 24px 18px 60px; }
+  header h1 { margin: 0 0 4px; font-size: 22px; letter-spacing: .2px; }
+  header p { margin: 0 0 20px; color: var(--muted); font-size: 13.5px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  @media (max-width: 820px) { .grid { grid-template-columns: 1fr; } }
+  .card {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+    padding: 16px 16px 18px;
+  }
+  .card h2 { margin: 0 0 12px; font-size: 14px; text-transform: uppercase;
+    letter-spacing: .6px; color: var(--muted); font-weight: 600; }
+  label { display: block; font-size: 12.5px; color: var(--muted); margin: 0 0 5px; }
+  textarea {
+    width: 100%; height: 150px; resize: vertical; background: var(--panel2);
+    color: var(--text); border: 1px solid var(--line); border-radius: 8px;
+    padding: 10px; font: 12px/1.45 ui-monospace, Consolas, Menlo, monospace;
+    white-space: pre; overflow: auto;
+  }
+  select {
+    width: 100%; background: var(--panel2); color: var(--text);
+    border: 1px solid var(--line); border-radius: 8px; padding: 9px 10px; font-size: 14px;
+  }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+  button {
+    border: 1px solid var(--line); background: var(--chip); color: var(--text);
+    border-radius: 8px; padding: 9px 14px; font-size: 13.5px; cursor: pointer;
+  }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  button.primary:hover { background: var(--accent2); }
+  button:disabled { opacity: .55; cursor: default; }
+  .note { font-size: 11.5px; color: var(--muted); margin-top: 12px; line-height: 1.45; }
+  .note a { color: var(--accent2); }
+  .status { font-size: 12.5px; color: var(--muted); min-height: 18px; margin-top: 10px; }
+  .error {
+    background: rgba(255,93,108,.10); border: 1px solid var(--danger);
+    color: #ffd4d9; border-radius: 8px; padding: 12px 14px; font-size: 13.5px;
+    margin-top: 14px; white-space: pre-wrap; word-break: break-word;
+  }
+  .hidden { display: none; }
+  .prob {
+    display: flex; align-items: baseline; gap: 10px; margin: 2px 0 14px;
+  }
+  .prob .big { font-size: 40px; font-weight: 700; letter-spacing: .5px; }
+  .prob .raw { font-size: 13px; color: var(--muted); font-family: ui-monospace, monospace; }
+  .badge {
+    display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 12px;
+    font-weight: 600; border: 1px solid var(--line);
+  }
+  .badge.ok { color: var(--ok); border-color: var(--ok); background: rgba(47,191,113,.08); }
+  .badge.warn { color: var(--warn); border-color: var(--warn); background: rgba(245,166,35,.08); }
+  .badge.danger { color: var(--danger); border-color: var(--danger); background: rgba(255,93,108,.08); }
+  .kv { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; margin: 12px 0; font-size: 13.5px; }
+  .kv .k { color: var(--muted); }
+  .kv .v { text-align: right; font-variant-numeric: tabular-nums; }
+  .rec {
+    background: var(--panel2); border: 1px solid var(--line); border-radius: 8px;
+    padding: 11px 13px; font-size: 13.5px; margin-top: 6px;
+  }
+  .modebox { border-top: 1px dashed var(--line); margin-top: 14px; padding-top: 12px; }
+  .modebox .name { font-weight: 600; margin-bottom: 6px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 4px; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); }
+  th { color: var(--muted); font-weight: 600; font-size: 12px; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .bar { height: 6px; background: var(--chip); border-radius: 4px; overflow: hidden; }
+  .bar > span { display: block; height: 100%; background: var(--accent); }
+  .footer { margin-top: 26px; color: var(--muted); font-size: 11.5px; text-align: center; }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>ECG MI-Triage</h1>
+    <p>Paste a 12&times;1000 ECG, pick a triage mode, and query the live model. Research prototype &mdash; not for clinical use.</p>
+  </header>
+
+  <div class="grid">
+    <!-- INPUT -->
+    <section class="card">
+      <h2>Input</h2>
+      <label for="ecg">ECG JSON &mdash; a 12&times;1000 array, or a full request body with an <code>ecg_data</code> key</label>
+      <textarea id="ecg" spellcheck="false" placeholder='[[...1000 samples...], ... 12 leads ...]'></textarea>
+
+      <label for="mode" style="margin-top:12px">Triage mode</label>
+      <select id="mode">
+        <option value="max_safety">max_safety &mdash; highest sensitivity</option>
+        <option value="high_safety" selected>high_safety &mdash; recommended</option>
+        <option value="balanced">balanced &mdash; screening</option>
+      </select>
+
+      <div class="row">
+        <button class="primary" id="btnPredict">Predict</button>
+      </div>
+      <div class="row">
+        <button id="btnMI">Load MI sample</button>
+        <button id="btnNormal">Load Normal sample</button>
+      </div>
+
+      <div class="status" id="status"></div>
+      <p class="note">
+        Sample records are <strong>derived from PTB-XL</strong> (Wagner et&nbsp;al., PhysioNet),
+        released under <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC&#8209;BY&nbsp;4.0</a>.
+        They are model <em>inputs</em>, loaded from <code>/static/</code> &mdash; never hardcoded results.
+      </p>
+    </section>
+
+    <!-- OUTPUT -->
+    <section class="card">
+      <h2>Result</h2>
+      <div id="errorBox" class="error hidden"></div>
+      <div id="placeholder" class="note" style="margin-top:2px">No result yet &mdash; run <strong>Predict</strong>.</div>
+
+      <!-- Prediction result -->
+      <div id="predictResult" class="hidden">
+        <div class="prob">
+          <span class="big" id="pProb">&mdash;</span>
+          <span class="raw" id="pProbRaw"></span>
+        </div>
+        <div>
+          <span class="badge" id="pRisk"></span>
+          <span class="badge" id="pConf" style="margin-left:6px"></span>
+          <span class="badge" id="pPriority" style="margin-left:6px"></span>
+        </div>
+        <label style="margin-top:14px">Recommendation</label>
+        <div class="rec" id="pRec"></div>
+        <div class="modebox">
+          <div class="name" id="mName"></div>
+          <div class="kv">
+            <span class="k">Threshold</span><span class="v" id="mThr"></span>
+            <span class="k">Sensitivity</span><span class="v" id="mSens"></span>
+            <span class="k">Specificity</span><span class="v" id="mSpec"></span>
+            <span class="k">Use case</span><span class="v" id="mUse"></span>
+          </div>
+          <div class="kv">
+            <span class="k">Model version</span><span class="v" id="mVer"></span>
+            <span class="k">Processing time</span><span class="v" id="mTime"></span>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <div class="footer">All values on this page are read from the live API response. Nothing is mocked.</div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  var $ = function (id) { return document.getElementById(id); };
+  var statusEl = $("status"), errorBox = $("errorBox");
+
+  function setStatus(msg) { statusEl.textContent = msg || ""; }
+  function clearError() { errorBox.classList.add("hidden"); errorBox.textContent = ""; }
+  function showError(msg) {
+    hide("predictResult"); hide("placeholder");
+    errorBox.textContent = msg;
+    errorBox.classList.remove("hidden");
+  }
+  function show(id) { $(id).classList.remove("hidden"); }
+  function hide(id) { $(id).classList.add("hidden"); }
+  function setBusy(b) {
+    ["btnPredict", "btnMI", "btnNormal"].forEach(function (id) { $(id).disabled = b; });
+  }
+
+  // Build the request body live from the textarea + mode dropdown.
+  // Accepts either a bare 12x1000 array OR a full body object with .ecg_data.
+  function buildBody() {
+    var raw = $("ecg").value.trim();
+    if (!raw) throw new Error("Paste an ECG (12x1000 array) or press a Load sample button first.");
+    var parsed;
+    try { parsed = JSON.parse(raw); }
+    catch (e) { throw new Error("That is not valid JSON.\n" + e.message); }
+    var ecg = (parsed && typeof parsed === "object" && !Array.isArray(parsed) && parsed.ecg_data)
+      ? parsed.ecg_data : parsed;
+    if (!Array.isArray(ecg) || ecg.length !== 12 || !Array.isArray(ecg[0]) || ecg[0].length !== 1000) {
+      throw new Error("ECG must be a 12x1000 array. Got shape: " +
+        (Array.isArray(ecg) ? ecg.length + "x" + (Array.isArray(ecg[0]) ? ecg[0].length : "?") : typeof ecg));
+    }
+    return { ecg_data: ecg, mode: $("mode").value, patient_id: "web-ui" };
+  }
+
+  // POST to a same-origin, RELATIVE path. Never a hardcoded host:port.
+  function post(path, body) {
+    return fetch(path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    }).then(function (res) {
+      return res.text().then(function (text) {
+        var data = null;
+        try { data = text ? JSON.parse(text) : null; } catch (e) {}
+        if (!res.ok) {
+          var detail = (data && (data.detail || data.message)) || text || ("HTTP " + res.status);
+          if (typeof detail !== "string") detail = JSON.stringify(detail);
+          throw new Error("API returned " + res.status + ": " + detail);
+        }
+        return data;
+      });
+    });
+  }
+
+  function riskClass(risk) {
+    var r = String(risk || "").toUpperCase();
+    if (r.indexOf("HIGH") >= 0 || r.indexOf("URGENT") >= 0 || r.indexOf("POSITIVE") >= 0) return "danger";
+    if (r.indexOf("LOW") >= 0 || r.indexOf("NEGATIVE") >= 0 || r.indexOf("NORMAL") >= 0) return "ok";
+    return "warn";
+  }
+  function setBadge(id, text, cls) {
+    var el = $(id);
+    el.textContent = text;
+    el.className = "badge " + cls;
+  }
+
+  function renderPredict(d) {
+    clearError(); hide("placeholder");
+    var pct = (d.mi_probability * 100).toFixed(1) + "%";
+    $("pProb").textContent = pct;
+    $("pProbRaw").textContent = "mi_probability = " + d.mi_probability;
+    setBadge("pRisk", d.risk_category, riskClass(d.risk_category));
+    setBadge("pConf", "confidence: " + d.confidence, "warn");
+    setBadge("pPriority", "priority: " + d.priority, riskClass(d.priority));
+    $("pRec").textContent = d.recommendation;
+    var m = d.mode_info || {};
+    $("mName").textContent = m.name || d.mode;
+    $("mThr").textContent = m.threshold;
+    $("mSens").textContent = (m.sensitivity != null ? m.sensitivity + "%" : "—");
+    $("mSpec").textContent = (m.specificity != null ? m.specificity + "%" : "—");
+    $("mUse").textContent = m.use_case || "—";
+    $("mVer").textContent = d.model_version;
+    $("mTime").textContent = (d.processing_time_ms != null ? d.processing_time_ms + " ms" : "—");
+    show("predictResult");
+  }
+
+  function run(path, render, label) {
+    clearError();
+    var body;
+    try { body = buildBody(); }
+    catch (e) { showError(e.message); return; }
+    setBusy(true); setStatus(label + "…");
+    post(path, body).then(function (d) {
+      render(d);
+      setStatus(label + " complete.");
+    }).catch(function (e) {
+      showError(e.message || String(e));
+      setStatus("");
+    }).then(function () { setBusy(false); });
+  }
+
+  // Load a sample INPUT from /static (relative, same-origin). Not a result.
+  function loadSample(file, name) {
+    clearError(); setBusy(true); setStatus("Loading " + name + " sample…");
+    fetch("/static/" + file).then(function (res) {
+      if (!res.ok) throw new Error("Could not load /static/" + file + " (HTTP " + res.status + ")");
+      return res.text();
+    }).then(function (text) {
+      $("ecg").value = text;
+      setStatus(name + " sample loaded (PTB-XL-derived). Press Predict.");
+    }).catch(function (e) {
+      showError(e.message || String(e));
+      setStatus("");
+    }).then(function () { setBusy(false); });
+  }
+
+  $("btnPredict").addEventListener("click", function () { run("/predict", renderPredict, "Predicting"); });
+  $("btnMI").addEventListener("click", function () { loadSample("demo_MI.json", "MI"); });
+  $("btnNormal").addEventListener("click", function () { loadSample("demo_NORMAL.json", "Normal"); });
+})();
+</script>

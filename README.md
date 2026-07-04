@@ -136,7 +136,7 @@ src/ecg_triage/     Seeded, patient-grouped fold pipeline (canonical training co
   train.py          Train the 3-seed ensemble        (--data / --models)
   evaluate.py       Reproduce RESULTS.txt             (--data / --models)
   check.py          Environment/data readiness check (python -m ecg_triage.check)
-api/                FastAPI inference service (prediction + Grad-CAM XAI + PDF reports)
+api/                FastAPI inference service (prediction + web UI + PDF reports)
 models/             Canonical fold-10 weights + ensemble_config.json (operating points)
 notebooks/          Exploratory notebooks (outputs stripped; see note below)
 RESULTS.txt         Canonical, reproducible metrics — the source of truth
@@ -155,8 +155,19 @@ with the `MODELS_DIR` env var). Endpoints:
 - `GET  /`            — service info + current AUROC + available modes
 - `GET  /healthz`     — readiness / loaded-model status
 - `GET  /modes`       — the three operating-point definitions
+- `GET  /ui`          — self-contained web UI (see below)
 - `POST /predict`     — MI probability + decision for a chosen mode
-- `POST /explain`     — Grad-CAM lead-wise attribution + clinical statement
+
+### Web UI
+
+```bash
+uvicorn api.main:app        # then open http://127.0.0.1:8000/ui
+```
+
+A single-file front-end (`api/static/index.html`, no framework/CDN/build step):
+paste a 12×1000 ECG (or load a bundled PTB-XL-derived sample), pick a mode, and
+call the live `/predict` endpoint same-origin. Every value shown comes from the
+real API response.
 
 PDF triage reports can be generated programmatically via
 `api.report_generator.generate_ecg_report(...)`.
