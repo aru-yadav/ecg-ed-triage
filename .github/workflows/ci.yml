@@ -32,15 +32,21 @@ jobs:
       - name: API smoke test (loads committed weights + one /predict)
         run: |
           PYTHONPATH=. python - <<'PY'
+          import math
           from fastapi.testclient import TestClient
           from api.main import app
           with TestClient(app) as c:
               r = c.get("/")
               assert r.status_code == 200, r.status_code
               assert abs(r.json()["auroc"] - 0.9249) < 1e-9, r.json()
-              ecg = [[0.0] * 1000 for _ in range(12)]
+              # A valid (non-flat, finite) 12x1000 signal must predict cleanly.
+              ecg = [[math.sin(t / 10.0 + k) for t in range(1000)] for k in range(12)]
               p = c.post("/predict", json={"ecg_data": ecg, "mode": "high_safety"})
               assert p.status_code == 200, (p.status_code, p.text)
               assert p.json()["model_version"] == "2.0.0", p.json()
+              # A degenerate (all-flat) signal must be rejected 422, never 500/NaN.
+              flat = [[0.0] * 1000 for _ in range(12)]
+              d = c.post("/predict", json={"ecg_data": flat, "mode": "high_safety"})
+              assert d.status_code == 422, (d.status_code, d.text)
           print("API smoke OK")
           PY

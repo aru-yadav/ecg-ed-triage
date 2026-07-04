@@ -33,3 +33,8 @@ scratch_*.out
 
 # NOTE: model weights in models/*.pt ARE committed (each ~35 MB, under GitHub's
 # 100 MB limit) so the repo reproduces out of the box. Do not add them here.
+best_mi.py
+find_demo.py
+save_demo.py
+/demo_MI.json
+/demo_NORMAL.json

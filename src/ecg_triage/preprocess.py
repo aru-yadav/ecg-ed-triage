@@ -17,9 +17,10 @@ def preprocess_ecg_advanced(ecg, orig_fs=100, target_fs=100):
     b, a = butter(4, [0.5 / nyq, 40 / nyq], btype='band')
     ecg_filtered = filtfilt(b, a, ecg, axis=1)
 
-    # 2. Z-score normalization per lead
+    # 2. Z-score normalization per lead. Clamp the denominator so a flat/constant
+    # lead (std -> 0) can never produce a divide-by-~0 -> NaN; it normalizes to 0.
     mean = ecg_filtered.mean(axis=1, keepdims=True)
-    std = ecg_filtered.std(axis=1, keepdims=True) + 1e-6
+    std = np.maximum(ecg_filtered.std(axis=1, keepdims=True), 1e-8)
     ecg_norm = (ecg_filtered - mean) / std
 
     # 3. Ensure fixed length (1000 samples)

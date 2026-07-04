@@ -26,7 +26,32 @@ async def predict(request: PredictionRequest):
 
     try:
         ecg_array = np.array(request.ecg_data, dtype=np.float32)
+
+        # Boundary guard: a degenerate or invalid ECG must never reach JSON
+        # serialization as NaN. Reject with 422 (clean client error), never 500.
+        # - non-finite samples (NaN/inf) posted in the request, and
+        # - flat/constant leads (std -> 0) that drive divide-by-~0 in any
+        #   downstream normalization.
+        if not np.all(np.isfinite(ecg_array)):
+            raise HTTPException(
+                status_code=422,
+                detail="Degenerate or invalid ECG signal: contains NaN or infinite samples."
+            )
+        if np.all(ecg_array.std(axis=1) < 1e-8):
+            raise HTTPException(
+                status_code=422,
+                detail="Degenerate or invalid ECG signal: all leads are flat/constant."
+            )
+
         result = predictor.predict(ecg_array, request.mode)
+
+        # Final guard: never emit a non-finite probability to the client.
+        prob = result.get("probability")
+        if prob is not None and not np.isfinite(prob):
+            raise HTTPException(
+                status_code=422,
+                detail="Degenerate or invalid ECG signal: model produced a non-finite probability."
+            )
 
         if not result["success"]:
             return PredictionResponse(
@@ -79,5 +104,9 @@ async def predict(request: PredictionRequest):
             model_version=VERSION,
             processing_time_ms=round((datetime.now().timestamp() * 1000) - start_ms, 2)
         )
+    except HTTPException:
+        # Our own 422 degenerate-signal errors must pass through unchanged,
+        # not be re-wrapped as a 500 by the generic handler below.
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
